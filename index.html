@@ -684,17 +684,31 @@ function enclosureDinos() {
 }
 
 // ── Enclosure panel blocks ─────────────────────────────────────────────────
+const FENCE_SEGMENT_M = 64; // one full-length fence block ≈ 64 m
+
 function renderSizeBlock(dinos) {
   const total = dinos.reduce((sum, d) => {
     const { val } = dominantTerrain(d);
     return sum + (val ?? 0);
   }, 0);
+  // Assume square enclosure: perimeter = 4√area
+  const perimeter = Math.round(4 * Math.sqrt(total));
+  const fenceBlocks = Math.ceil(perimeter / FENCE_SEGMENT_M);
+
   return `
     <div class="stat-block">
       <div class="label">Enclosure Size</div>
       <div class="big-num">${total.toLocaleString()} m²</div>
-      <div class="note">Sum of dominant terrain per dino</div>
-      <div class="pre-alpha" style="margin-top:6px">⚠ Pre-alpha: size estimates may be inaccurate</div>
+      <div class="note" style="margin-bottom:8px">Sum of dominant terrain per dino</div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
+        <span style="color:var(--text-dim)">Perimeter (square)</span>
+        <span>${perimeter.toLocaleString()} m</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px">
+        <span style="color:var(--text-dim)">Fence segments</span>
+        <span>~${fenceBlocks} blocks</span>
+      </div>
+      <div class="pre-alpha">⚠ Pre-alpha: size estimates may be inaccurate</div>
     </div>`;
 }
 
