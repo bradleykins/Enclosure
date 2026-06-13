@@ -359,7 +359,7 @@ const state = {
   all: [],
   filters: {
     diet: new Set(),
-    era: new Set(),
+    habitat: new Set(),
     nest_size: new Set(),
   },
   search: '',
@@ -408,8 +408,11 @@ function tableCols() {
 function formatDiet(raw) {
   return raw ? raw.replace('diet_', '').replace(/_/g, ' ') : raw;
 }
-function formatEra(raw) {
-  return raw ? raw.replace('era_', '').replace(/_/g, ' ') : raw;
+
+function habitat(d) {
+  if (d.bio_group === 'group_10_marine')  return 'Sea';
+  if (d.bio_group === 'group_11_flying')  return 'Air';
+  return 'Land';
 }
 
 // ── Data helpers ───────────────────────────────────────────────────────────
@@ -424,10 +427,9 @@ function dominantTerrain(d) {
 function filteredDinos() {
   return state.all.filter(d => {
     if (state.search && !d.Name.toLowerCase().includes(state.search)) return false;
-    for (const [group, active] of Object.entries(state.filters)) {
-      if (active.size === 0) continue;
-      if (!active.has(d[group])) return false;
-    }
+    if (state.filters.diet.size > 0 && !state.filters.diet.has(d.diet)) return false;
+    if (state.filters.habitat.size > 0 && !state.filters.habitat.has(habitat(d))) return false;
+    if (state.filters.nest_size.size > 0 && !state.filters.nest_size.has(d.nest_size)) return false;
     return true;
   });
 }
@@ -500,13 +502,12 @@ function compatRank(r) {
 // ── Sidebar ────────────────────────────────────────────────────────────────
 function buildSidebar() {
   const diets     = [...new Set(state.all.map(d => d.diet))].sort();
-  const eras      = [...new Set(state.all.map(d => d.era))].sort();
   const nestSizes = [...new Set(state.all.map(d => d.nest_size))].filter(v => v != null).sort((a, b) => a - b);
 
   const groups = [
-    { key: 'diet',      label: 'Diet',      values: diets,     labelFn: formatDiet },
-    { key: 'era',       label: 'Era',       values: eras,      labelFn: formatEra  },
-    { key: 'nest_size', label: 'Nest Size', values: nestSizes, labelFn: v => NEST_SIZE_LABEL[v] || v },
+    { key: 'diet',      label: 'Diet',      values: diets,           labelFn: formatDiet },
+    { key: 'habitat',   label: 'Habitat',   values: ['Land','Sea','Air'] },
+    { key: 'nest_size', label: 'Nest Size', values: nestSizes,       labelFn: v => NEST_SIZE_LABEL[v] || v },
   ];
 
   const sidebar = document.getElementById('sidebar');
