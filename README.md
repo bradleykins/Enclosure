@@ -2,7 +2,7 @@
 
 A local/hosted tool for planning dinosaur enclosures in Jurassic World Evolution 3.
 
-**[Live demo](https://yourusername.github.io/enclosure/)** — replace with your GitHub Pages URL.
+**[Live demo](https://bradleykins.github.io/enclosure/)**
 
 ## Features
 
@@ -31,8 +31,5 @@ Then open http://localhost:3000.
 
 1. Push to GitHub
 2. Settings → Pages → Deploy from branch → `main` → `/ (root)`
-3. Live at `https://yourusername.github.io/enclosure/`
+3. Live at `https://bradleykins.github.io/enclosure/`
 
-## Data sources
-
-All data scraped from [paleo.gg](https://www.paleo.gg/games/jurassic-world-evolution-3) — DinoDB and Enclosure Planner. Pre-alpha caveat applies to size estimates.
