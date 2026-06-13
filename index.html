@@ -271,6 +271,21 @@
     .cohab-label.pack     { color: var(--blue); }
     .cohab-label.unknown  { color: var(--text-dim); }
 
+    .compat-badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .3px;
+    }
+    .compat-badge.friendly { background: #1a3a1a; color: var(--green);   border: 1px solid #238636; }
+    .compat-badge.pack     { background: #1a2a3a; color: var(--blue);    border: 1px solid #1f6feb; }
+    .compat-badge.unknown  { background: #21262d; color: var(--text-dim); border: 1px solid var(--border); }
+    .compat-badge.prey     { background: #2d2000; color: var(--orange);  border: 1px solid #9e6a03; }
+    .compat-badge.hostile  { background: #3a1a1a; color: var(--red);     border: 1px solid #da3633; }
+
     .food-row {
       display: flex;
       justify-content: space-between;
@@ -372,15 +387,22 @@ const REACTION_MAP = {
 };
 const REACTION_SEVERITY = { fight: 3, hunt: 2, packhunt: 1, socialize: 0 };
 
-const TABLE_COLS = [
-  { key: '',                label: '',            numeric: false },
-  { key: 'Name',            label: 'Name',        numeric: false },
-  { key: 'variant',         label: 'Variant',     numeric: false },
-  { key: 'Base Appeal',     label: 'Appeal',      numeric: true  },
-  { key: 'Base Dominance',  label: 'Dominance',   numeric: true  },
-  { key: 'Security Rating', label: 'Security',    numeric: true  },
-  { key: 'dominant_terrain',label: 'Top Terrain', numeric: true  },
-];
+function tableCols() {
+  const hasEnclosure = state.enclosure.length > 0;
+  const cols = [
+    { key: '',                label: '',            numeric: false },
+    { key: 'Name',            label: 'Name',        numeric: false },
+    { key: 'variant',         label: 'Variant',     numeric: false },
+  ];
+  if (hasEnclosure) cols.push({ key: 'compat', label: 'Compat', numeric: false });
+  cols.push(
+    { key: 'Base Appeal',     label: 'Appeal',      numeric: true  },
+    { key: 'Base Dominance',  label: 'Dominance',   numeric: true  },
+    { key: 'Security Rating', label: 'Security',    numeric: true  },
+    { key: 'dominant_terrain',label: 'Top Terrain', numeric: true  },
+  );
+  return cols;
+}
 
 // ── Formatters ─────────────────────────────────────────────────────────────
 function formatDiet(raw) {
@@ -412,12 +434,25 @@ function filteredDinos() {
 
 function sortedDinos(list) {
   const { col, dir } = state.sort;
+  const hasEnclosure = state.enclosure.length > 0;
   return [...list].sort((a, b) => {
+    // compat sort is primary when enclosure has dinos; already-added rows sort last
+    if (hasEnclosure) {
+      const aAdded = state.enclosure.includes(a.Name + '__' + a.variant);
+      const bAdded = state.enclosure.includes(b.Name + '__' + b.variant);
+      if (aAdded !== bAdded) return aAdded ? 1 : -1;
+      if (!aAdded) {
+        const cr = compatRank(enclosureCompat(a)) - compatRank(enclosureCompat(b));
+        if (cr !== 0) return cr;
+      }
+    }
+    // user-selected column as tiebreaker (or primary when no enclosure)
     let av = a[col], bv = b[col];
     if (col === 'dominant_terrain') {
       av = dominantTerrain(a).val ?? -1;
       bv = dominantTerrain(b).val ?? -1;
     }
+    if (col === 'compat') return 0; // already sorted above
     if (av == null) av = dir === 'asc' ? Infinity : -Infinity;
     if (bv == null) bv = dir === 'asc' ? Infinity : -Infinity;
     if (typeof av === 'string') return dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
@@ -436,6 +471,30 @@ function worstReaction(a, b) {
   if (ra == null && rb == null) return null;
   if (sev(ra) >= sev(rb)) return ra;
   return rb;
+}
+
+// Worst reaction between candidate d and all dinos currently in the enclosure.
+// Returns null when enclosure is empty.
+function enclosureCompat(d) {
+  const enc = enclosureDinos();
+  if (enc.length === 0) return null;
+  let worst = null;
+  let worstSev = -2;
+  for (const e of enc) {
+    // skip comparing a dino against itself
+    if (e.Name === d.Name && e.variant === d.variant) continue;
+    const r = worstReaction(d, e);
+    const s = REACTION_SEVERITY[r] ?? -1;
+    if (s > worstSev) { worstSev = s; worst = r; }
+  }
+  return worst; // null means only self in enclosure, treat as no data
+}
+
+// Sort rank: friendly=0, pack=1, null/unknown=2, prey=3, fight=4
+const COMPAT_SORT_RANK = { socialize: 0, packhunt: 1, fight: 4, hunt: 3 };
+function compatRank(r) {
+  if (r === null) return 2; // unknown
+  return COMPAT_SORT_RANK[r] ?? 2;
 }
 
 // ── Sidebar ────────────────────────────────────────────────────────────────
@@ -487,7 +546,7 @@ function resetFilters() {
 function renderTableHead() {
   const { col, dir } = state.sort;
   document.getElementById('table-head').innerHTML = `<tr>${
-    TABLE_COLS.map(c => {
+    tableCols().map(c => {
       if (!c.key) return `<th></th>`;
       const cls = c.key === col ? (dir === 'asc' ? 'sort-asc' : 'sort-desc') : '';
       return `<th class="${cls}" onclick="setSort('${c.key}')">${c.label}</th>`;
@@ -505,16 +564,32 @@ function setSort(col) {
   renderTable();
 }
 
+const COMPAT_LABEL = { socialize: 'Friendly', packhunt: 'Pack', hunt: 'Prey', fight: 'Hostile' };
+const COMPAT_CLS   = { socialize: 'friendly', packhunt: 'pack', hunt: 'prey',  fight: 'hostile' };
+
 function renderTableBody(list) {
+  const cols = tableCols();
   if (list.length === 0) {
     document.getElementById('table-body').innerHTML =
-      `<tr><td colspan="${TABLE_COLS.length}" class="empty-msg">No dinosaurs match the current filters</td></tr>`;
+      `<tr><td colspan="${cols.length}" class="empty-msg">No dinosaurs match the current filters</td></tr>`;
     return;
   }
+  const showCompat = state.enclosure.length > 0;
   document.getElementById('table-body').innerHTML = list.map(d => {
     const key = d.Name + '__' + d.variant;
     const added = state.enclosure.includes(key);
     const dt = dominantTerrain(d);
+    let compatCell = '';
+    if (showCompat) {
+      if (added) {
+        compatCell = `<td></td>`;
+      } else {
+        const r = enclosureCompat(d);
+        const cls   = r ? (COMPAT_CLS[r]   ?? 'unknown') : 'unknown';
+        const label = r ? (COMPAT_LABEL[r]  ?? 'Unknown') : 'Unknown';
+        compatCell = `<td><span class="compat-badge ${cls}">${label}</span></td>`;
+      }
+    }
     return `<tr class="${added ? 'in-enclosure' : ''}">
       <td>
         <button class="add-btn ${added ? 'added' : ''}"
@@ -525,6 +600,7 @@ function renderTableBody(list) {
       </td>
       <td>${d.Name}</td>
       <td><span class="variant-badge ${d.variant}">${d.variant}</span></td>
+      ${compatCell}
       <td class="num">${d['Base Appeal'] ?? ''}</td>
       <td class="num">${d['Base Dominance'] ?? ''}</td>
       <td class="num">${d['Security Rating'] ?? ''}</td>
