@@ -274,18 +274,16 @@
       border-radius: 50%;
       flex-shrink: 0;
     }
-    .cohab-dot.hostile      { background: var(--red); }
-    .cohab-dot.prey         { background: var(--orange); }
-    .cohab-dot.friendly     { background: var(--green); }
-    .cohab-dot.pack         { background: var(--blue); }
-    .cohab-dot.unknown      { background: var(--border); }
-    .cohab-dot.sep-habitat  { background: #6e7681; }
+    .cohab-dot.friendly    { background: var(--green); }
+    .cohab-dot.neutral     { background: var(--border); }
+    .cohab-dot.mixed       { background: var(--orange); }
+    .cohab-dot.hostile     { background: var(--red); }
+    .cohab-dot.sep-habitat { background: #6e7681; }
 
-    .cohab-label.hostile     { color: var(--red); }
-    .cohab-label.prey        { color: var(--orange); }
     .cohab-label.friendly    { color: var(--green); }
-    .cohab-label.pack        { color: var(--blue); }
-    .cohab-label.unknown     { color: var(--text-dim); }
+    .cohab-label.neutral     { color: var(--text-dim); }
+    .cohab-label.mixed       { color: var(--orange); }
+    .cohab-label.hostile     { color: var(--red); }
     .cohab-label.sep-habitat { color: #6e7681; }
 
     .compat-badge {
@@ -297,12 +295,11 @@
       text-transform: uppercase;
       letter-spacing: .3px;
     }
-    .compat-badge.friendly     { background: #1a3a1a; color: var(--green);   border: 1px solid #238636; }
-    .compat-badge.pack         { background: #1a2a3a; color: var(--blue);    border: 1px solid #1f6feb; }
-    .compat-badge.unknown      { background: #21262d; color: var(--text-dim); border: 1px solid var(--border); }
-    .compat-badge.prey         { background: #2d2000; color: var(--orange);  border: 1px solid #9e6a03; }
-    .compat-badge.hostile      { background: #3a1a1a; color: var(--red);     border: 1px solid #da3633; }
-    .compat-badge.sep-habitat  { background: #1a1a2a; color: #6e7681;        border: 1px solid #30363d; }
+    .compat-badge.friendly    { background: #1a3a1a; color: var(--green);    border: 1px solid #238636; }
+    .compat-badge.neutral     { background: #21262d; color: var(--text-dim); border: 1px solid var(--border); }
+    .compat-badge.mixed       { background: #2d2000; color: var(--orange);   border: 1px solid #9e6a03; }
+    .compat-badge.hostile     { background: #3a1a1a; color: var(--red);      border: 1px solid #da3633; }
+    .compat-badge.sep-habitat { background: #1a1a2a; color: #6e7681;         border: 1px solid #30363d; }
 
     .food-row {
       display: flex;
@@ -401,14 +398,14 @@ const FOOD_COLS = [
   'Ground Leaf','Tall Leaf','Meat','Ground Nut','Tall Nut','Prey','Shark'
 ];
 
-const REACTION_MAP = {
-  fight:            { label: 'Hostile',   cls: 'hostile'   },
-  hunt:             { label: 'Prey',      cls: 'prey'      },
-  socialize:        { label: 'Friendly',  cls: 'friendly'  },
-  packhunt:         { label: 'Pack',      cls: 'pack'      },
+// cohab relationship types (derived from cohab_like / cohab_dislike)
+const COHAB_MAP = {
+  friendly:      { label: 'Friendly',      cls: 'friendly'    },
+  neutral:       { label: 'Neutral',       cls: 'neutral'     },
+  mixed:         { label: 'Mixed',         cls: 'mixed'       },
+  hostile:       { label: 'Hostile',       cls: 'hostile'     },
   separate_habitat: { label: 'Diff. Habitat', cls: 'sep-habitat' },
 };
-const REACTION_SEVERITY = { fight: 3, hunt: 2, packhunt: 1, socialize: 0, separate_habitat: 4 };
 
 function tableCols() {
   const hasEnclosure = state.enclosure.length > 0;
@@ -486,42 +483,41 @@ function sortedDinos(list) {
   });
 }
 
-function worstReaction(a, b) {
+// Returns cohab relationship between two dino records
+function cohabRelation(a, b) {
   const aUuid = a.Name.toLowerCase().replace(/\s+/g, '');
   const bUuid = b.Name.toLowerCase().replace(/\s+/g, '');
-  if (aUuid === bUuid) return 'socialize';
-  // cross-habitat pairs cannot share an enclosure
+  if (aUuid === bUuid) return 'friendly';
   if (habitat(a) !== habitat(b)) return 'separate_habitat';
-  const ra = a.reaction?.[bUuid];
-  const rb = b.reaction?.[aUuid];
-  const sev = r => REACTION_SEVERITY[r] ?? -1;
-  if (ra == null && rb == null) return null;
-  if (sev(ra) >= sev(rb)) return ra;
-  return rb;
+  const aLikesB   = (a.cohab_like    || []).includes(bUuid);
+  const aDislikesB = (a.cohab_dislike || []).includes(bUuid);
+  const bLikesA   = (b.cohab_like    || []).includes(aUuid);
+  const bDislikesA = (b.cohab_dislike || []).includes(aUuid);
+  if (aDislikesB || bDislikesA) {
+    if (aLikesB || bLikesA) return 'mixed';
+    return 'hostile';
+  }
+  if (aLikesB || bLikesA) return 'friendly';
+  return 'neutral';
 }
 
-// Worst reaction between candidate d and all dinos currently in the enclosure.
-// Returns null when enclosure is empty.
+// Worst relationship between candidate d and all enclosure dinos
 function enclosureCompat(d) {
   const enc = enclosureDinos();
   if (enc.length === 0) return null;
-  let worst = null;
-  let worstSev = -2;
+  let worst = 'friendly';
   for (const e of enc) {
-    // skip comparing a dino against itself
     if (e.Name === d.Name && e.variant === d.variant) continue;
-    const r = worstReaction(d, e);
-    const s = REACTION_SEVERITY[r] ?? -1;
-    if (s > worstSev) { worstSev = s; worst = r; }
+    const r = cohabRelation(d, e);
+    if (compatRank(r) > compatRank(worst)) worst = r;
   }
-  return worst; // null means only self in enclosure, treat as no data
+  return worst;
 }
 
-// Sort rank: friendly=0, pack=1, null/unknown=2, prey=3, hostile=4, diff.habitat=5
-const COMPAT_SORT_RANK = { socialize: 0, packhunt: 1, hunt: 3, fight: 4, separate_habitat: 5 };
+// Sort rank: friendly=0, neutral=1, mixed=2, hostile=3, sep-habitat=4
+const COMPAT_SORT_RANK = { friendly: 0, neutral: 1, mixed: 2, hostile: 3, separate_habitat: 4 };
 function compatRank(r) {
-  if (r === null) return 2; // unknown same-habitat
-  return COMPAT_SORT_RANK[r] ?? 2;
+  return COMPAT_SORT_RANK[r] ?? 1;
 }
 
 // ── Sidebar ────────────────────────────────────────────────────────────────
@@ -599,8 +595,8 @@ function setSort(col) {
   renderTable();
 }
 
-const COMPAT_LABEL = { socialize: 'Friendly', packhunt: 'Pack', hunt: 'Prey', fight: 'Hostile', separate_habitat: 'Diff. Habitat' };
-const COMPAT_CLS   = { socialize: 'friendly', packhunt: 'pack', hunt: 'prey',  fight: 'hostile', separate_habitat: 'sep-habitat' };
+const COMPAT_LABEL = { friendly: 'Friendly', neutral: 'Neutral', mixed: 'Mixed', hostile: 'Hostile', separate_habitat: 'Diff. Habitat' };
+const COMPAT_CLS   = { friendly: 'friendly', neutral: 'neutral', mixed: 'mixed', hostile: 'hostile', separate_habitat: 'sep-habitat' };
 
 function renderTableBody(list) {
   const cols = tableCols();
@@ -697,13 +693,13 @@ function renderCohabBlock(dinos) {
   const pairs = [];
   for (let i = 0; i < dinos.length; i++) {
     for (let j = i + 1; j < dinos.length; j++) {
-      const reaction = worstReaction(dinos[i], dinos[j]);
-      pairs.push({ a: dinos[i], b: dinos[j], reaction });
+      const rel = cohabRelation(dinos[i], dinos[j]);
+      pairs.push({ a: dinos[i], b: dinos[j], rel });
     }
   }
 
   const rows = pairs.map(p => {
-    const r = p.reaction ? REACTION_MAP[p.reaction] : { label: 'Unknown', cls: 'unknown' };
+    const r = COHAB_MAP[p.rel] ?? COHAB_MAP.neutral;
     return `<div class="cohab-row">
       <span class="cohab-dot ${r.cls}"></span>
       <span style="flex:1;color:var(--text-dim)">${p.a.Name} + ${p.b.Name}</span>
