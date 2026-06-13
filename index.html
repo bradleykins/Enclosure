@@ -274,17 +274,19 @@
       border-radius: 50%;
       flex-shrink: 0;
     }
-    .cohab-dot.hostile  { background: var(--red); }
-    .cohab-dot.prey     { background: var(--orange); }
-    .cohab-dot.friendly { background: var(--green); }
-    .cohab-dot.pack     { background: var(--blue); }
-    .cohab-dot.unknown  { background: var(--border); }
+    .cohab-dot.hostile      { background: var(--red); }
+    .cohab-dot.prey         { background: var(--orange); }
+    .cohab-dot.friendly     { background: var(--green); }
+    .cohab-dot.pack         { background: var(--blue); }
+    .cohab-dot.unknown      { background: var(--border); }
+    .cohab-dot.sep-habitat  { background: #6e7681; }
 
-    .cohab-label.hostile  { color: var(--red); }
-    .cohab-label.prey     { color: var(--orange); }
-    .cohab-label.friendly { color: var(--green); }
-    .cohab-label.pack     { color: var(--blue); }
-    .cohab-label.unknown  { color: var(--text-dim); }
+    .cohab-label.hostile     { color: var(--red); }
+    .cohab-label.prey        { color: var(--orange); }
+    .cohab-label.friendly    { color: var(--green); }
+    .cohab-label.pack        { color: var(--blue); }
+    .cohab-label.unknown     { color: var(--text-dim); }
+    .cohab-label.sep-habitat { color: #6e7681; }
 
     .compat-badge {
       display: inline-block;
@@ -295,11 +297,12 @@
       text-transform: uppercase;
       letter-spacing: .3px;
     }
-    .compat-badge.friendly { background: #1a3a1a; color: var(--green);   border: 1px solid #238636; }
-    .compat-badge.pack     { background: #1a2a3a; color: var(--blue);    border: 1px solid #1f6feb; }
-    .compat-badge.unknown  { background: #21262d; color: var(--text-dim); border: 1px solid var(--border); }
-    .compat-badge.prey     { background: #2d2000; color: var(--orange);  border: 1px solid #9e6a03; }
-    .compat-badge.hostile  { background: #3a1a1a; color: var(--red);     border: 1px solid #da3633; }
+    .compat-badge.friendly     { background: #1a3a1a; color: var(--green);   border: 1px solid #238636; }
+    .compat-badge.pack         { background: #1a2a3a; color: var(--blue);    border: 1px solid #1f6feb; }
+    .compat-badge.unknown      { background: #21262d; color: var(--text-dim); border: 1px solid var(--border); }
+    .compat-badge.prey         { background: #2d2000; color: var(--orange);  border: 1px solid #9e6a03; }
+    .compat-badge.hostile      { background: #3a1a1a; color: var(--red);     border: 1px solid #da3633; }
+    .compat-badge.sep-habitat  { background: #1a1a2a; color: #6e7681;        border: 1px solid #30363d; }
 
     .food-row {
       display: flex;
@@ -399,12 +402,13 @@ const FOOD_COLS = [
 ];
 
 const REACTION_MAP = {
-  fight:     { label: 'Hostile',  cls: 'hostile'  },
-  hunt:      { label: 'Prey',     cls: 'prey'     },
-  socialize: { label: 'Friendly', cls: 'friendly' },
-  packhunt:  { label: 'Pack',     cls: 'pack'     },
+  fight:            { label: 'Hostile',   cls: 'hostile'   },
+  hunt:             { label: 'Prey',      cls: 'prey'      },
+  socialize:        { label: 'Friendly',  cls: 'friendly'  },
+  packhunt:         { label: 'Pack',      cls: 'pack'      },
+  separate_habitat: { label: 'Diff. Habitat', cls: 'sep-habitat' },
 };
-const REACTION_SEVERITY = { fight: 3, hunt: 2, packhunt: 1, socialize: 0 };
+const REACTION_SEVERITY = { fight: 3, hunt: 2, packhunt: 1, socialize: 0, separate_habitat: 4 };
 
 function tableCols() {
   const hasEnclosure = state.enclosure.length > 0;
@@ -485,8 +489,9 @@ function sortedDinos(list) {
 function worstReaction(a, b) {
   const aUuid = a.Name.toLowerCase().replace(/\s+/g, '');
   const bUuid = b.Name.toLowerCase().replace(/\s+/g, '');
-  // same species — always socialize within group limits
   if (aUuid === bUuid) return 'socialize';
+  // cross-habitat pairs cannot share an enclosure
+  if (habitat(a) !== habitat(b)) return 'separate_habitat';
   const ra = a.reaction?.[bUuid];
   const rb = b.reaction?.[aUuid];
   const sev = r => REACTION_SEVERITY[r] ?? -1;
@@ -512,10 +517,10 @@ function enclosureCompat(d) {
   return worst; // null means only self in enclosure, treat as no data
 }
 
-// Sort rank: friendly=0, pack=1, null/unknown=2, prey=3, fight=4
-const COMPAT_SORT_RANK = { socialize: 0, packhunt: 1, fight: 4, hunt: 3 };
+// Sort rank: friendly=0, pack=1, null/unknown=2, prey=3, hostile=4, diff.habitat=5
+const COMPAT_SORT_RANK = { socialize: 0, packhunt: 1, hunt: 3, fight: 4, separate_habitat: 5 };
 function compatRank(r) {
-  if (r === null) return 2; // unknown
+  if (r === null) return 2; // unknown same-habitat
   return COMPAT_SORT_RANK[r] ?? 2;
 }
 
@@ -594,8 +599,8 @@ function setSort(col) {
   renderTable();
 }
 
-const COMPAT_LABEL = { socialize: 'Friendly', packhunt: 'Pack', hunt: 'Prey', fight: 'Hostile' };
-const COMPAT_CLS   = { socialize: 'friendly', packhunt: 'pack', hunt: 'prey',  fight: 'hostile' };
+const COMPAT_LABEL = { socialize: 'Friendly', packhunt: 'Pack', hunt: 'Prey', fight: 'Hostile', separate_habitat: 'Diff. Habitat' };
+const COMPAT_CLS   = { socialize: 'friendly', packhunt: 'pack', hunt: 'prey',  fight: 'hostile', separate_habitat: 'sep-habitat' };
 
 function renderTableBody(list) {
   const cols = tableCols();
