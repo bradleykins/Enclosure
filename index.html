@@ -777,7 +777,7 @@ function renderTableBody(list) {
       `<tr><td colspan="${cols.length}" class="empty-msg">No dinosaurs match the current filters</td></tr>`;
     return;
   }
-  const showCompat = state.enclosure.length > 0;
+  const showCompat = Object.keys(state.enclosure).length > 0;
   // Pre-compute per-row scores once to avoid O(n²) in the template
   const fitCache   = new Map();
   const lockCache  = new Map();
