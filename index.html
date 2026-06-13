@@ -650,8 +650,12 @@ function renderTable() {
 // ── Enclosure state ────────────────────────────────────────────────────────
 function toggleEnclosure(key) {
   const i = state.enclosure.indexOf(key);
-  if (i === -1) state.enclosure.push(key);
-  else          state.enclosure.splice(i, 1);
+  if (i === -1) {
+    state.enclosure.push(key);
+    clearSearch();
+  } else {
+    state.enclosure.splice(i, 1);
+  }
   renderTable();
   renderEnclosure();
 }
