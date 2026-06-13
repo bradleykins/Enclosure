@@ -449,7 +449,7 @@ const state = {
   enclosure: {},  // key → count
 };
 
-// ── Constants ──────────────────────────────────────────────────────────────
+// ─�� Constants ──────────────────────────────────────────────────────────────
 const NEST_SIZE_LABEL = { 1: 'Small', 2: 'Medium', 3: 'Large' };
 
 const TERRAIN_COLS = [
@@ -477,10 +477,10 @@ function tableCols() {
     { key: 'Name',            label: 'Name',        numeric: false },
     { key: 'variant',         label: 'Variant',     numeric: false },
   ];
+  cols.push({ key: 'lockin', label: 'Lock-in', numeric: true });
   if (hasEnclosure) {
-    cols.push({ key: 'compat',  label: 'Compat',  numeric: false });
-    cols.push({ key: 'fit',     label: 'Fit',     numeric: true  });
-    cols.push({ key: 'lockin',  label: 'Lock-in', numeric: true  });
+    cols.push({ key: 'compat', label: 'Compat', numeric: false });
+    cols.push({ key: 'fit',    label: 'Fit',    numeric: true  });
   }
   cols.push(
     { key: 'Base Appeal',     label: 'Appeal',      numeric: true  },
@@ -540,9 +540,7 @@ function scoreCls(s) {
 // Lower = better (dino is less restrictive)
 function lockInScore(candidate) {
   const enc = enclosureDinos();
-  if (enc.length === 0) return null;
-
-  // Build a temporary enclosure that includes the candidate
+  // Works with empty enclosure — measures how hostile the pool is to this dino alone
   const tempEnc = [...enc, candidate];
 
   // Pool: all non-added, same-habitat dinos (excluding the candidate itself)
@@ -838,9 +836,10 @@ function renderTable() {
   // show/hide enclosure-only sort buttons
   const hasEnc = Object.keys(state.enclosure).length > 0;
   document.getElementById('sort-fit-btn').style.display    = hasEnc ? '' : 'none';
-  document.getElementById('sort-lockin-btn').style.display = hasEnc ? '' : 'none';
-  // if sort col is enclosure-only but enclosure cleared, reset to Name
-  if (!hasEnc && (state.sort.col === 'fit' || state.sort.col === 'lockin')) {
+  // Lock-in always visible — useful even with empty enclosure
+  document.getElementById('sort-lockin-btn').style.display = '';
+  // only reset fit (needs enclosure profile); lock-in works standalone
+  if (!hasEnc && state.sort.col === 'fit') {
     setQuickSort('Name');
     return;
   }
@@ -1059,7 +1058,7 @@ function clearSearch() {
   renderTable();
 }
 
-// ── Boot ───────────────────────────────────────────────────────────────────
+// ── Boot ─────────────────────────────────────────────────────────��─────────
 fetch('./enclosure_planner.json')
   .then(r => r.json())
   .then(data => {
