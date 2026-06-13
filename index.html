@@ -361,6 +361,7 @@ const state = {
     diet: new Set(),
     habitat: new Set(),
     nest_size: new Set(),
+    food: new Set(),
   },
   search: '',
   sort: { col: 'Name', dir: 'asc' },
@@ -430,6 +431,7 @@ function filteredDinos() {
     if (state.filters.diet.size > 0 && !state.filters.diet.has(d.diet)) return false;
     if (state.filters.habitat.size > 0 && !state.filters.habitat.has(habitat(d))) return false;
     if (state.filters.nest_size.size > 0 && !state.filters.nest_size.has(d.nest_size)) return false;
+    if (state.filters.food.size > 0 && ![...state.filters.food].some(col => d[col] > 0)) return false;
     return true;
   });
 }
@@ -500,14 +502,23 @@ function compatRank(r) {
 }
 
 // ── Sidebar ────────────────────────────────────────────────────────────────
+const FOOD_FILTER_COLS = [
+  'Prey', 'Meat', 'Fish', 'Shark',
+  'Ground Leaf', 'Tall Leaf',
+  'Ground Fiber', 'Tall Fiber',
+  'Ground Fruit', 'Tall Fruit',
+  'Ground Nut', 'Tall Nut',
+];
+
 function buildSidebar() {
   const diets     = [...new Set(state.all.map(d => d.diet))].sort();
   const nestSizes = [...new Set(state.all.map(d => d.nest_size))].filter(v => v != null).sort((a, b) => a - b);
 
   const groups = [
-    { key: 'diet',      label: 'Diet',      values: diets,           labelFn: formatDiet },
+    { key: 'diet',      label: 'Diet',      values: diets,              labelFn: formatDiet },
     { key: 'habitat',   label: 'Habitat',   values: ['Land','Sea','Air'] },
-    { key: 'nest_size', label: 'Nest Size', values: nestSizes,       labelFn: v => NEST_SIZE_LABEL[v] || v },
+    { key: 'food',      label: 'Food',      values: FOOD_FILTER_COLS },
+    { key: 'nest_size', label: 'Nest Size', values: nestSizes,          labelFn: v => NEST_SIZE_LABEL[v] || v },
   ];
 
   const sidebar = document.getElementById('sidebar');
