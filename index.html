@@ -115,17 +115,32 @@
       gap: 10px;
       flex-shrink: 0;
     }
-    .table-toolbar input {
-      flex: 1;
-      padding: 5px 10px;
+    .search-wrap { position: relative; flex: 1; }
+    .search-wrap input {
+      width: 100%;
+      padding: 5px 28px 5px 10px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 4px;
       color: var(--text);
       font-size: 12px;
     }
-    .table-toolbar input::placeholder { color: var(--text-dim); }
-    .table-toolbar input:focus { outline: none; border-color: var(--accent); }
+    .search-wrap input::placeholder { color: var(--text-dim); }
+    .search-wrap input:focus { outline: none; border-color: var(--accent); }
+    .search-clear {
+      position: absolute;
+      right: 6px; top: 50%;
+      transform: translateY(-50%);
+      background: none; border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1;
+      padding: 0 2px;
+      display: none;
+    }
+    .search-clear:hover { color: var(--text); }
+    .search-wrap.has-value .search-clear { display: block; }
     .count-badge { color: var(--text-dim); font-size: 11px; white-space: nowrap; }
 
     .table-scroll { overflow-y: auto; flex: 1; }
@@ -336,7 +351,10 @@
 
   <div id="table-area">
     <div class="table-toolbar">
-      <input id="search" type="text" placeholder="Search dinosaurs…">
+      <div class="search-wrap" id="search-wrap">
+        <input id="search" type="text" placeholder="Search dinosaurs…">
+        <button class="search-clear" id="search-clear" title="Clear search" onclick="clearSearch()">✕</button>
+      </div>
       <span class="count-badge" id="count-badge">Loading…</span>
     </div>
     <div class="table-scroll">
@@ -749,6 +767,15 @@ function renderEnclosure() {
   `;
 }
 
+function clearSearch() {
+  const input = document.getElementById('search');
+  input.value = '';
+  state.search = '';
+  document.getElementById('search-wrap').classList.remove('has-value');
+  input.focus();
+  renderTable();
+}
+
 // ── Boot ───────────────────────────────────────────────────────────────────
 fetch('./enclosure_planner.json')
   .then(r => r.json())
@@ -759,6 +786,7 @@ fetch('./enclosure_planner.json')
     renderEnclosure();
     document.getElementById('search').addEventListener('input', e => {
       state.search = e.target.value.toLowerCase();
+      document.getElementById('search-wrap').classList.toggle('has-value', e.target.value.length > 0);
       renderTable();
     });
   });
