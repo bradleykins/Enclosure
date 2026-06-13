@@ -857,6 +857,32 @@ function renderCohabBlock(dinos) {
     </div>`;
 }
 
+function renderTerrainBlock(dinos) {
+  const totals = {};
+  dinos.forEach(d => {
+    TERRAIN_COLS.forEach(col => {
+      if (d[col] != null && d[col] > 0) {
+        totals[col] = (totals[col] ?? 0) + d[col];
+      }
+    });
+  });
+
+  const entries = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+  if (entries.length === 0) return '';
+
+  const rows = entries.map(([col, val]) => `
+    <div class="food-row">
+      <span class="food-name">${col}</span>
+      <span class="food-val">${val.toLocaleString()}</span>
+    </div>`).join('');
+
+  return `
+    <div class="stat-block">
+      <div class="label">Terrain Requirements</div>
+      ${rows}
+    </div>`;
+}
+
 function renderFoodBlock(dinos) {
   const totals = {};
   dinos.forEach(d => {
@@ -909,6 +935,7 @@ function renderEnclosure() {
     </div>
     <div class="enc-list">${listHtml}</div>
     ${dinos.length > 0 ? renderSizeBlock(dinos) : ''}
+    ${dinos.length > 0 ? renderTerrainBlock(dinos) : ''}
     ${dinos.length >= 2 ? renderCohabBlock(dinos) : ''}
     ${dinos.length > 0 ? renderFoodBlock(dinos) : ''}
     ${dinos.length > 0 ? `<button id="clear-btn" onclick="clearEnclosure()">Clear Enclosure</button>` : ''}
@@ -932,6 +959,7 @@ fetch('./enclosure_planner.json')
     buildSidebar();
     renderTable();
     renderEnclosure();
+    document.getElementById('search').focus();
     document.getElementById('search').addEventListener('input', e => {
       state.search = e.target.value.toLowerCase();
       document.getElementById('search-wrap').classList.toggle('has-value', e.target.value.length > 0);
