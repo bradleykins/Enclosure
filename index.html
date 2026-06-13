@@ -226,10 +226,38 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 5px 8px;
+      padding: 4px 8px;
       background: var(--bg);
       border-radius: 4px;
       font-size: 12px;
+      gap: 6px;
+    }
+    .enc-chip .enc-name { flex: 1; min-width: 0; }
+    .enc-chip .enc-counter {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .enc-chip .cnt-btn {
+      width: 18px; height: 18px;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+      padding: 0;
+    }
+    .enc-chip .cnt-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .enc-chip .cnt-btn.minus:hover { border-color: var(--red); color: var(--red); }
+    .enc-chip .cnt-num {
+      min-width: 18px;
+      text-align: center;
+      font-weight: 600;
+      color: var(--text-head);
     }
     .enc-chip .remove-btn {
       background: none;
@@ -398,7 +426,7 @@ const state = {
   },
   search: '',
   sort: { col: 'Name', dir: 'asc' },
-  enclosure: [],
+  enclosure: {},  // key → count
 };
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -423,7 +451,7 @@ const COHAB_MAP = {
 };
 
 function tableCols() {
-  const hasEnclosure = state.enclosure.length > 0;
+  const hasEnclosure = Object.keys(state.enclosure).length > 0;
   const cols = [
     { key: '',                label: '',            numeric: false },
     { key: 'Name',            label: 'Name',        numeric: false },
@@ -501,7 +529,7 @@ function lockInScore(candidate) {
   const candKey = candidate.Name + '__' + candidate.variant;
   const pool = state.all.filter(d => {
     const key = d.Name + '__' + d.variant;
-    if (state.enclosure.includes(key) || key === candKey) return false;
+    if ((key in state.enclosure) || key === candKey) return false;
     return habitat(d) === habitat(candidate);
   });
 
@@ -553,12 +581,12 @@ function filteredDinos() {
 
 function sortedDinos(list) {
   const { col, dir } = state.sort;
-  const hasEnclosure = state.enclosure.length > 0;
+  const hasEnclosure = Object.keys(state.enclosure).length > 0;
   return [...list].sort((a, b) => {
     // compat sort is primary when enclosure has dinos; already-added rows sort last
     if (hasEnclosure) {
-      const aAdded = state.enclosure.includes(a.Name + '__' + a.variant);
-      const bAdded = state.enclosure.includes(b.Name + '__' + b.variant);
+      const aAdded = (a.Name + '__' + a.variant) in state.enclosure;
+      const bAdded = (b.Name + '__' + b.variant) in state.enclosure;
       if (aAdded !== bAdded) return aAdded ? 1 : -1;
       if (!aAdded) {
         const cr = compatRank(enclosureCompat(a)) - compatRank(enclosureCompat(b));
@@ -722,7 +750,7 @@ function renderTableBody(list) {
   if (showCompat) {
     list.forEach(d => {
       const key = d.Name + '__' + d.variant;
-      if (!state.enclosure.includes(key)) {
+      if (!(key in state.enclosure)) {
         fitCache.set(key, resourceScore(d));
         lockCache.set(key, lockInScore(d));
       }
@@ -730,7 +758,7 @@ function renderTableBody(list) {
   }
   document.getElementById('table-body').innerHTML = list.map(d => {
     const key = d.Name + '__' + d.variant;
-    const added = state.enclosure.includes(key);
+    const added = key in state.enclosure;
     const dt = dominantTerrain(d);
     let extraCells = '';
     if (showCompat) {
@@ -779,47 +807,77 @@ function renderTable() {
 
 // ── Enclosure state ────────────────────────────────────────────────────────
 function toggleEnclosure(key) {
-  const i = state.enclosure.indexOf(key);
-  if (i === -1) {
-    state.enclosure.push(key);
-    clearSearch();
+  if (key in state.enclosure) {
+    delete state.enclosure[key];
   } else {
-    state.enclosure.splice(i, 1);
+    state.enclosure[key] = 1;
+    clearSearch();
+  }
+  renderTable();
+  renderEnclosure();
+}
+
+function adjustCount(key, delta) {
+  if (!(key in state.enclosure)) return;
+  const next = state.enclosure[key] + delta;
+  if (next <= 0) {
+    delete state.enclosure[key];
+  } else {
+    state.enclosure[key] = next;
   }
   renderTable();
   renderEnclosure();
 }
 
 function clearEnclosure() {
-  state.enclosure = [];
+  state.enclosure = {};
   renderTable();
   renderEnclosure();
 }
 
+// Returns unique dino records (for compat/profile logic)
 function enclosureDinos() {
-  return state.enclosure.map(key => {
+  return Object.keys(state.enclosure).map(key => {
     const [name, variant] = key.split('__');
     return state.all.find(d => d.Name === name && d.variant === variant);
   }).filter(Boolean);
 }
 
+// Returns [{dino, count}] for stats that scale with count
+function enclosureEntries() {
+  return Object.entries(state.enclosure).map(([key, count]) => {
+    const [name, variant] = key.split('__');
+    const dino = state.all.find(d => d.Name === name && d.variant === variant);
+    return dino ? { dino, count } : null;
+  }).filter(Boolean);
+}
+
+function enclosureTotalCount() {
+  return Object.values(state.enclosure).reduce((s, n) => s + n, 0);
+}
+
 // ── Enclosure panel blocks ─────────────────────────────────────────────────
 const FENCE_SEGMENT_M = 64; // one full-length fence block ≈ 64 m
 
-function renderSizeBlock(dinos) {
-  const total = dinos.reduce((sum, d) => {
-    const { val } = dominantTerrain(d);
-    return sum + (val ?? 0);
+const ALL_SIZE_COLS = [...TERRAIN_COLS, ...FOOD_COLS];
+
+function renderSizeBlock() {
+  // Sum ALL terrain + food cols per dino (matches paleo.gg formula),
+  // scaled by count: area(n) = base × (1 + (n−1) × 0.14)
+  const entries = enclosureEntries();
+  const total = entries.reduce((sum, { dino, count }) => {
+    const base = ALL_SIZE_COLS.reduce((s, col) => s + (dino[col] > 0 ? dino[col] : 0), 0);
+    return sum + base * (1 + (count - 1) * 0.14);
   }, 0);
-  // Assume square enclosure: perimeter = 4√area
-  const perimeter = Math.round(4 * Math.sqrt(total));
+  const rounded = Math.round(total);
+  const perimeter = Math.round(4 * Math.sqrt(rounded));
   const fenceBlocks = Math.ceil(perimeter / FENCE_SEGMENT_M);
 
   return `
     <div class="stat-block">
       <div class="label">Enclosure Size</div>
-      <div class="big-num">${total.toLocaleString()} m²</div>
-      <div class="note" style="margin-bottom:8px">Sum of dominant terrain per dino</div>
+      <div class="big-num">${rounded.toLocaleString()} m²</div>
+      <div class="note" style="margin-bottom:8px">Sum of all terrain types per dino</div>
       <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">
         <span style="color:var(--text-dim)">Perimeter (square)</span>
         <span>${perimeter.toLocaleString()} m</span>
@@ -857,12 +915,12 @@ function renderCohabBlock(dinos) {
     </div>`;
 }
 
-function renderTerrainBlock(dinos) {
+function renderTerrainBlock() {
   const totals = {};
-  dinos.forEach(d => {
+  enclosureEntries().forEach(({ dino, count }) => {
     TERRAIN_COLS.forEach(col => {
-      if (d[col] != null && d[col] > 0) {
-        totals[col] = (totals[col] ?? 0) + d[col];
+      if (dino[col] > 0) {
+        totals[col] = (totals[col] ?? 0) + dino[col] * count;
       }
     });
   });
@@ -883,12 +941,12 @@ function renderTerrainBlock(dinos) {
     </div>`;
 }
 
-function renderFoodBlock(dinos) {
+function renderFoodBlock() {
   const totals = {};
-  dinos.forEach(d => {
+  enclosureEntries().forEach(({ dino, count }) => {
     FOOD_COLS.forEach(col => {
-      if (d[col] != null && d[col] > 0) {
-        totals[col] = (totals[col] ?? 0) + d[col];
+      if (dino[col] > 0) {
+        totals[col] = (totals[col] ?? 0) + dino[col] * count;
       }
     });
   });
@@ -916,29 +974,36 @@ function renderFoodBlock(dinos) {
 // ── Enclosure panel ────────────────────────────────────────────────────────
 function renderEnclosure() {
   const panel = document.getElementById('enclosure-panel');
-  const dinos = enclosureDinos();
+  const entries = enclosureEntries();
+  const dinos = entries.map(e => e.dino);
+  const totalCount = enclosureTotalCount();
 
-  const listHtml = dinos.length === 0
+  const listHtml = entries.length === 0
     ? `<div class="empty-msg">Click ＋ to add dinosaurs</div>`
-    : dinos.map(d => {
-        const key = d.Name + '__' + d.variant;
+    : entries.map(({ dino, count }) => {
+        const key = dino.Name + '__' + dino.variant;
         return `<div class="enc-chip">
-          <span>${d.Name} <span class="variant-badge ${d.variant}">${d.variant}</span></span>
-          <button class="remove-btn" onclick="toggleEnclosure('${key}')" title="Remove">✕</button>
+          <span class="enc-name">${dino.Name} <span class="variant-badge ${dino.variant}">${dino.variant}</span></span>
+          <div class="enc-counter">
+            <button class="cnt-btn minus" onclick="adjustCount('${key}',-1)" title="Remove one">−</button>
+            <span class="cnt-num">${count}</span>
+            <button class="cnt-btn" onclick="adjustCount('${key}',1)" title="Add one">+</button>
+            <button class="remove-btn" onclick="toggleEnclosure('${key}')" title="Remove all">✕</button>
+          </div>
         </div>`;
       }).join('');
 
   panel.innerHTML = `
     <div class="panel-header">
       <h2>My Enclosure</h2>
-      <span class="dino-count">${dinos.length} dino${dinos.length !== 1 ? 's' : ''}</span>
+      <span class="dino-count">${totalCount} dino${totalCount !== 1 ? 's' : ''}</span>
     </div>
     <div class="enc-list">${listHtml}</div>
-    ${dinos.length > 0 ? renderSizeBlock(dinos) : ''}
-    ${dinos.length > 0 ? renderTerrainBlock(dinos) : ''}
+    ${entries.length > 0 ? renderSizeBlock() : ''}
+    ${entries.length > 0 ? renderTerrainBlock() : ''}
     ${dinos.length >= 2 ? renderCohabBlock(dinos) : ''}
-    ${dinos.length > 0 ? renderFoodBlock(dinos) : ''}
-    ${dinos.length > 0 ? `<button id="clear-btn" onclick="clearEnclosure()">Clear Enclosure</button>` : ''}
+    ${entries.length > 0 ? renderFoodBlock() : ''}
+    ${entries.length > 0 ? `<button id="clear-btn" onclick="clearEnclosure()">Clear Enclosure</button>` : ''}
   `;
 }
 
