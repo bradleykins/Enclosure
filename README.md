@@ -2,7 +2,7 @@
 
 A local/hosted tool for planning dinosaur enclosures in Jurassic World Evolution 3.
 
-**[Live demo](https://bradleykins.github.io/enclosure/)**
+**[Live demo](https://bradleykins.github.io/Enclosure/)**
 
 ## Features
 
@@ -31,5 +31,5 @@ Then open http://localhost:3000.
 
 1. Push to GitHub
 2. Settings → Pages → Deploy from branch → `main` → `/ (root)`
-3. Live at `https://bradleykins.github.io/enclosure/`
+3. Live at `[https://bradleykins.github.io/enclosure/](https://bradleykins.github.io/Enclosure/)`
 
