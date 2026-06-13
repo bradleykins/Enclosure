@@ -301,6 +301,21 @@
     .compat-badge.hostile     { background: #3a1a1a; color: var(--red);      border: 1px solid #da3633; }
     .compat-badge.sep-habitat { background: #1a1a2a; color: #6e7681;         border: 1px solid #30363d; }
 
+    .score-badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      min-width: 36px;
+      text-align: center;
+    }
+    .score-badge.s-great  { background: #1a3a1a; color: #3fb950; border: 1px solid #238636; }
+    .score-badge.s-good   { background: #1c2e1a; color: #7ee787; border: 1px solid #2ea043; }
+    .score-badge.s-ok     { background: #2d2000; color: #e3b341; border: 1px solid #9e6a03; }
+    .score-badge.s-poor   { background: #3a1a1a; color: #f85149; border: 1px solid #da3633; }
+
     .food-row {
       display: flex;
       justify-content: space-between;
@@ -414,7 +429,11 @@ function tableCols() {
     { key: 'Name',            label: 'Name',        numeric: false },
     { key: 'variant',         label: 'Variant',     numeric: false },
   ];
-  if (hasEnclosure) cols.push({ key: 'compat', label: 'Compat', numeric: false });
+  if (hasEnclosure) {
+    cols.push({ key: 'compat',  label: 'Compat',  numeric: false });
+    cols.push({ key: 'fit',     label: 'Fit',     numeric: true  });
+    cols.push({ key: 'lockin',  label: 'Lock-in', numeric: true  });
+  }
   cols.push(
     { key: 'Base Appeal',     label: 'Appeal',      numeric: true  },
     { key: 'Base Dominance',  label: 'Dominance',   numeric: true  },
@@ -422,6 +441,83 @@ function tableCols() {
     { key: 'dominant_terrain',label: 'Top Terrain', numeric: true  },
   );
   return cols;
+}
+
+// Build merged terrain+food profile of all enclosure dinos
+function enclosureProfile() {
+  const enc = enclosureDinos();
+  const terrainTypes = new Set();
+  const foodTypes    = new Set();
+  const terrainDominants = new Set();
+  enc.forEach(d => {
+    TERRAIN_COLS.forEach(col => { if (d[col] > 0) terrainTypes.add(col); });
+    FOOD_COLS.forEach(col    => { if (d[col] > 0) foodTypes.add(col); });
+    const { col } = dominantTerrain(d);
+    if (col) terrainDominants.add(col);
+  });
+  return { terrainTypes, foodTypes, terrainDominants };
+}
+
+// 0–100 resource-fit score: how much of candidate's needs are already in the enclosure
+function resourceScore(d) {
+  const enc = enclosureDinos();
+  if (enc.length === 0) return null;
+
+  const { terrainTypes, foodTypes } = enclosureProfile();
+
+  // candidate's active terrain cols
+  const dTerrains = TERRAIN_COLS.filter(col => d[col] > 0);
+  // candidate's active food cols
+  const dFoods    = FOOD_COLS.filter(col => d[col] > 0);
+
+  const terrainScore = dTerrains.length === 0 ? 100
+    : (dTerrains.filter(c => terrainTypes.has(c)).length / dTerrains.length) * 100;
+
+  const foodScore = dFoods.length === 0 ? 100
+    : (dFoods.filter(c => foodTypes.has(c)).length / dFoods.length) * 100;
+
+  // Weight terrain 40%, food 60% (food management is more active)
+  return Math.round(terrainScore * 0.4 + foodScore * 0.6);
+}
+
+function scoreCls(s) {
+  if (s === null) return '';
+  if (s >= 75) return 's-great';
+  if (s >= 50) return 's-good';
+  if (s >= 25) return 's-ok';
+  return 's-poor';
+}
+
+// % of same-habitat candidates that would become hostile if this dino is added
+// Lower = better (dino is less restrictive)
+function lockInScore(candidate) {
+  const enc = enclosureDinos();
+  if (enc.length === 0) return null;
+
+  // Build a temporary enclosure that includes the candidate
+  const tempEnc = [...enc, candidate];
+
+  // Pool: all non-added, same-habitat dinos (excluding the candidate itself)
+  const candKey = candidate.Name + '__' + candidate.variant;
+  const pool = state.all.filter(d => {
+    const key = d.Name + '__' + d.variant;
+    if (state.enclosure.includes(key) || key === candKey) return false;
+    return habitat(d) === habitat(candidate);
+  });
+
+  if (pool.length === 0) return 0;
+
+  // Count how many would be hostile against the temp enclosure
+  let hostile = 0;
+  for (const p of pool) {
+    // worst relation between p and any member of tempEnc
+    for (const e of tempEnc) {
+      const rel = cohabRelation(p, e);
+      if (rel === 'hostile' || rel === 'mixed') { hostile++; break; }
+    }
+  }
+
+  return Math.round((hostile / pool.length) * 100);
 }
 
 // ── Formatters ─────────────────────────────────────────────────────────────
@@ -467,6 +563,11 @@ function sortedDinos(list) {
       if (!aAdded) {
         const cr = compatRank(enclosureCompat(a)) - compatRank(enclosureCompat(b));
         if (cr !== 0) return cr;
+        // within same compat tier: fit desc, then lock-in asc
+        const sr = (resourceScore(b) ?? 0) - (resourceScore(a) ?? 0);
+        if (sr !== 0) return sr;
+        const lr = (lockInScore(a) ?? 100) - (lockInScore(b) ?? 100);
+        if (lr !== 0) return lr;
       }
     }
     // user-selected column as tiebreaker (or primary when no enclosure)
@@ -615,19 +716,38 @@ function renderTableBody(list) {
     return;
   }
   const showCompat = state.enclosure.length > 0;
+  // Pre-compute per-row scores once to avoid O(n²) in the template
+  const fitCache   = new Map();
+  const lockCache  = new Map();
+  if (showCompat) {
+    list.forEach(d => {
+      const key = d.Name + '__' + d.variant;
+      if (!state.enclosure.includes(key)) {
+        fitCache.set(key, resourceScore(d));
+        lockCache.set(key, lockInScore(d));
+      }
+    });
+  }
   document.getElementById('table-body').innerHTML = list.map(d => {
     const key = d.Name + '__' + d.variant;
     const added = state.enclosure.includes(key);
     const dt = dominantTerrain(d);
-    let compatCell = '';
+    let extraCells = '';
     if (showCompat) {
       if (added) {
-        compatCell = `<td></td>`;
+        extraCells = `<td></td><td></td><td></td>`;
       } else {
         const r = enclosureCompat(d);
-        const cls   = r ? (COMPAT_CLS[r]   ?? 'unknown') : 'unknown';
-        const label = r ? (COMPAT_LABEL[r]  ?? 'Unknown') : 'Unknown';
-        compatCell = `<td><span class="compat-badge ${cls}">${label}</span></td>`;
+        const cls   = r ? (COMPAT_CLS[r]   ?? 'neutral') : 'neutral';
+        const label = r ? (COMPAT_LABEL[r]  ?? 'Neutral') : 'Neutral';
+        const fit   = fitCache.get(key);
+        const lock  = lockCache.get(key);
+        const fitCls  = fit  !== null ? scoreCls(fit)  : '';
+        const lockCls = lock !== null ? scoreCls(100 - lock) : '';
+        extraCells = `
+          <td><span class="compat-badge ${cls}">${label}</span></td>
+          <td class="num">${fit !== null ? `<span class="score-badge ${fitCls}">${fit}</span>` : ''}</td>
+          <td class="num">${lock !== null ? `<span class="score-badge ${lockCls}" title="% of remaining dinos made hostile">${lock}%</span>` : ''}</td>`;
       }
     }
     return `<tr class="${added ? 'in-enclosure' : ''}">
@@ -640,7 +760,7 @@ function renderTableBody(list) {
       </td>
       <td>${d.Name}</td>
       <td><span class="variant-badge ${d.variant}">${d.variant}</span></td>
-      ${compatCell}
+      ${extraCells}
       <td class="num">${d['Base Appeal'] ?? ''}</td>
       <td class="num">${d['Base Dominance'] ?? ''}</td>
       <td class="num">${d['Security Rating'] ?? ''}</td>
