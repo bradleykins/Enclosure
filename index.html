@@ -483,16 +483,25 @@ function sortedDinos(list) {
   });
 }
 
-// Returns cohab relationship between two dino records
+// cohab_like/dislike entries are [[uuid, [variants]], ...]
+// Check if dino A has an opinion about dino B (specific variant)
+function cohabHas(list, uuid, variant) {
+  for (const [u, variants] of (list || [])) {
+    if (u === uuid && variants.includes(variant)) return true;
+  }
+  return false;
+}
+
+// Returns cohab relationship between two dino records (variant-aware)
 function cohabRelation(a, b) {
   const aUuid = a.Name.toLowerCase().replace(/\s+/g, '');
   const bUuid = b.Name.toLowerCase().replace(/\s+/g, '');
   if (aUuid === bUuid) return 'friendly';
   if (habitat(a) !== habitat(b)) return 'separate_habitat';
-  const aLikesB   = (a.cohab_like    || []).includes(bUuid);
-  const aDislikesB = (a.cohab_dislike || []).includes(bUuid);
-  const bLikesA   = (b.cohab_like    || []).includes(aUuid);
-  const bDislikesA = (b.cohab_dislike || []).includes(aUuid);
+  const aLikesB    = cohabHas(a.cohab_like,    bUuid, b.variant);
+  const aDislikesB = cohabHas(a.cohab_dislike,  bUuid, b.variant);
+  const bLikesA    = cohabHas(b.cohab_like,    aUuid, a.variant);
+  const bDislikesA = cohabHas(b.cohab_dislike,  aUuid, a.variant);
   if (aDislikesB || bDislikesA) {
     if (aLikesB || bLikesA) return 'mixed';
     return 'hostile';
