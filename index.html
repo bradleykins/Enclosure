@@ -115,6 +115,19 @@
       gap: 10px;
       flex-shrink: 0;
     }
+    .sort-btns { display: flex; gap: 3px; flex-shrink: 0; }
+    .sort-btn {
+      padding: 4px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-dim);
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .sort-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .sort-btn:hover:not(.active) { border-color: var(--accent); color: var(--accent); }
     .search-wrap { position: relative; flex: 1; }
     .search-wrap input {
       width: 100%;
@@ -398,6 +411,14 @@
         <input id="search" type="text" placeholder="Search dinosaurs…">
         <button class="search-clear" id="search-clear" title="Clear search" onclick="clearSearch()">✕</button>
       </div>
+      <div class="sort-btns" id="sort-btns">
+        <span style="color:var(--text-dim);font-size:11px;align-self:center">Sort:</span>
+        <button class="sort-btn active" onclick="setQuickSort('Name')">Name</button>
+        <button class="sort-btn" onclick="setQuickSort('Base Appeal')">Appeal</button>
+        <button class="sort-btn" onclick="setQuickSort('dominant_terrain')">Size</button>
+        <button class="sort-btn" id="sort-fit-btn"    onclick="setQuickSort('fit')"    style="display:none">Fit</button>
+        <button class="sort-btn" id="sort-lockin-btn" onclick="setQuickSort('lockin')" style="display:none">Lock-in</button>
+      </div>
       <span class="count-badge" id="count-badge">Loading…</span>
     </div>
     <div class="table-scroll">
@@ -419,7 +440,6 @@
 const state = {
   all: [],
   filters: {
-    diet: new Set(),
     habitat: new Set(),
     nest_size: new Set(),
     food: new Set(),
@@ -571,7 +591,6 @@ function dominantTerrain(d) {
 function filteredDinos() {
   return state.all.filter(d => {
     if (state.search && !d.Name.toLowerCase().includes(state.search)) return false;
-    if (state.filters.diet.size > 0 && !state.filters.diet.has(d.diet)) return false;
     if (state.filters.habitat.size > 0 && !state.filters.habitat.has(habitat(d))) return false;
     if (state.filters.nest_size.size > 0 && !state.filters.nest_size.has(d.nest_size)) return false;
     if (state.filters.food.size > 0 && ![...state.filters.food].some(col => d[col] > 0)) return false;
@@ -603,8 +622,14 @@ function sortedDinos(list) {
     if (col === 'dominant_terrain') {
       av = dominantTerrain(a).val ?? -1;
       bv = dominantTerrain(b).val ?? -1;
+    } else if (col === 'fit') {
+      av = resourceScore(a) ?? -1;
+      bv = resourceScore(b) ?? -1;
+    } else if (col === 'lockin') {
+      av = lockInScore(a) ?? 101;
+      bv = lockInScore(b) ?? 101;
     }
-    if (col === 'compat') return 0; // already sorted above
+    if (col === 'compat') return 0;
     if (av == null) av = dir === 'asc' ? Infinity : -Infinity;
     if (bv == null) bv = dir === 'asc' ? Infinity : -Infinity;
     if (typeof av === 'string') return dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
@@ -668,11 +693,9 @@ const FOOD_FILTER_COLS = [
 ];
 
 function buildSidebar() {
-  const diets     = [...new Set(state.all.map(d => d.diet))].sort();
   const nestSizes = [...new Set(state.all.map(d => d.nest_size))].filter(v => v != null).sort((a, b) => a - b);
 
   const groups = [
-    { key: 'diet',      label: 'Diet',      values: diets,              labelFn: formatDiet },
     { key: 'habitat',   label: 'Habitat',   values: ['Land','Sea','Air'] },
     { key: 'food',      label: 'Food',      values: FOOD_FILTER_COLS },
     { key: 'nest_size', label: 'Nest Size', values: nestSizes,          labelFn: v => NEST_SIZE_LABEL[v] || v },
@@ -721,6 +744,17 @@ function renderTableHead() {
       return `<th class="${cls}" onclick="setSort('${c.key}')">${c.label}</th>`;
     }).join('')
   }</tr>`;
+}
+
+function setQuickSort(col) {
+  const isComputed = col === 'fit' || col === 'lockin';
+  state.sort.col = col;
+  state.sort.dir = isComputed ? 'desc' : (col === 'dominant_terrain' ? 'desc' : 'asc');
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+  const map = { 'Name': 0, 'Base Appeal': 1, 'dominant_terrain': 2, 'fit': 3, 'lockin': 4 };
+  const btn = document.querySelectorAll('.sort-btn')[map[col]];
+  if (btn) btn.classList.add('active');
+  renderTable();
 }
 
 function setSort(col) {
@@ -801,6 +835,15 @@ function renderTable() {
   const list = filteredDinos();
   const sorted = sortedDinos(list);
   document.getElementById('count-badge').textContent = `${list.length} Found`;
+  // show/hide enclosure-only sort buttons
+  const hasEnc = Object.keys(state.enclosure).length > 0;
+  document.getElementById('sort-fit-btn').style.display    = hasEnc ? '' : 'none';
+  document.getElementById('sort-lockin-btn').style.display = hasEnc ? '' : 'none';
+  // if sort col is enclosure-only but enclosure cleared, reset to Name
+  if (!hasEnc && (state.sort.col === 'fit' || state.sort.col === 'lockin')) {
+    setQuickSort('Name');
+    return;
+  }
   renderTableHead();
   renderTableBody(sorted);
 }
